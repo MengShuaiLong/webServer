@@ -221,17 +221,35 @@ async def run_ros2_node(ros2_node):
         rclpy.spin_once(ros2_node)
         await asyncio.sleep(0.1)
 
+async def run_server(ros2_node):
+    """
+    异步运行 WebSocket 服务器和 ROS 2 节点
+    :param ros2_node: ROS 2 节点对象
+    """
+    # 启动 WebSocket 服务器
+    server = await websockets.serve(
+        lambda ws, path: handle_connection(ws, path, ros2_node),
+        "0.0.0.0",
+        8080
+    )
+    # 并发运行 ROS 2 节点和等待 WebSocket 服务器关闭
+    await asyncio.gather(
+        run_ros2_node(ros2_node),
+        server.wait_closed()
+    )
+
 def main():
     rclpy.init()
     ros2_node = OtaROS2Node()
-    start_server = websockets.serve(lambda ws, path: handle_connection(ws, path, ros2_node), "0.0.0.0", 8080)
-
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(start_server)
-    # 移除调用 send_data_periodically 方法的代码
-    # asyncio.ensure_future(ros2_node.send_data_periodically())
-    asyncio.ensure_future(run_ros2_node(ros2_node))
-    loop.run_forever()
+    try:
+        # 使用 asyncio.run 运行异步任务
+        asyncio.run(run_server(ros2_node))
+    except KeyboardInterrupt:
+        pass
+    finally:
+        # 销毁节点并关闭 ROS 2
+        ros2_node.destroy_node()
+        rclpy.shutdown()
 
 if __name__ == "__main__":
     main()
