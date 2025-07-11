@@ -1,5 +1,11 @@
 #!/bin/bash
 
+local_path=$(dirname $(readlink -f "$0"))
+
+cd $local_path
+echo $local_path
+source env.sh
+
 MSG_TEMPLATE='header:
   stamp:
     sec: 0

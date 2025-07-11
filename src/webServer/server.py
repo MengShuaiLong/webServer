@@ -154,6 +154,8 @@ async def send_upgrade_complete(websocket, imei):
     print("升级完成")
     await websocket.send(json.dumps(response))
 
+import websockets
+
 async def handle_connection(websocket, path, ros2_node):
     print("客户端已连接")
     ros2_node.add_connection(websocket)
@@ -202,9 +204,11 @@ async def handle_connection(websocket, path, ros2_node):
                     asyncio.create_task(send_upgrade_complete(websocket, data['imei']))
 
             except json.JSONDecodeError:
-
                 ros2_node.get_logger().error("收到的消息不是有效的 JSON 格式")
-
+    # 捕获 ConnectionClosedError 异常
+    except websockets.exceptions.ConnectionClosedError as e:
+        ros2_node.get_logger().warning(f"WebSocket 连接意外关闭: {e}")
+    # 捕获 ConnectionClosedOK 异常
     except websockets.exceptions.ConnectionClosedOK:
         pass
     finally:
