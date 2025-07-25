@@ -3,7 +3,7 @@ import websockets
 import json
 import rclpy
 from rclpy.node import Node
-from common_msgs.msg import VehicleInfo
+from ota_msgs.msg import TruckImei, VehicleConf
 
 # 模拟车辆数据
 cars = [
@@ -45,12 +45,18 @@ class OtaROS2Node(Node):
     def __init__(self):
         super().__init__('ota_ros2_node')
         # 修改发布者消息类型为 String
-        self.vehicle_publisher = self.create_publisher(VehicleInfo, '/ota/upgrade/cmd', 10)
+        self.vehicle_publisher = self.create_publisher(TruckImei, '/ota_ui/ui/ota_truck_imei', 10)
         # 修改订阅者消息类型为 String
         self.upgrade_subscriber = self.create_subscription(
-            VehicleInfo,  # 使用标准消息类型 String
-            '/communication/cloud/online_truck',
+            TruckImei,  # 使用标准消息类型 String
+            '/ota_update/server/online_truck_info',
             self.upgrade_command_callback,
+            10
+        )       
+        self.vehicle_subscriber = self.create_subscription(
+            VehicleConf,  # 使用标准消息类型 String
+            '/ota_update/server/vehicle_conf',
+            self.vehicle_conf_callback,
             10
         )
         self.websocket_connections = []
@@ -107,15 +113,16 @@ class OtaROS2Node(Node):
                 else: 
                     vehicle_info["gear"] = '未知'
 
-                if msg.mode == 1:
+                if msg.polit_status == 1:
                     vehicle_info["mode"] = "自动驾驶"
-                elif msg.mode == 2:
+                elif msg.polit_status == 2:
                     vehicle_info["mode"] = "遥控驾驶"
                 else:
                     vehicle_info["mode"] = "人工驾驶"
 
-                vehicle_info["version"] = str(msg.version)
-                vehicle_info["imei"] = str(msg.imei)
+                # vehicle_info["version"] = str(msg.version)
+                vehicle_info["version"] = '1.2.3'
+                vehicle_info["imei"] = str(msg.truck_imei)
 
             except AttributeError as attr_err:
                 # 处理消息对象缺少属性的情况
@@ -138,6 +145,21 @@ class OtaROS2Node(Node):
 
         except Exception as general_error:
             self.get_logger().error(f"处理升级指令时出现未知错误: {general_error}")
+
+    def vehicle_conf_callback(self, msg):
+        """
+        处理接收到的车辆配置信息
+        :param msg: 接收到的 ROS 2 标准消息
+        """
+        try:
+            # 从接收到的消息中提取车辆配置信息
+            vehicle_conf = VehicleConf()
+            vehicle_conf = msg
+            self.get_logger().info(f"收到车辆配置信息: {vehicle_conf}")
+            # 更新存储的数据
+            self.received_conf_data[vehicle_conf.truck_imei] = vehicle_conf
+        except Exception as general_error:
+            self.get_logger().error(f"处理车辆配置信息时出现未知错误: {general_error}")
 
 async def send_upgrade_complete(websocket, imei):
     """
@@ -181,10 +203,11 @@ async def handle_connection(websocket, path, ros2_node):
                     ros2_node.get_logger().info(f"收到 IMEI 为 {imei} 的开始升级消息，文件名为: {file_name}")
 
                     # 创建并填充 VehicleInfo 消息
-                    vehicle_info = VehicleInfo()
-                    vehicle_info.imei = imei
+                    vehicle_info = TruckImei()
+                    vehicle_info.truck_imei = imei
                     vehicle_info.file_name = file_name
-
+                    vehicle_info.down_path = "/home/msl/html_ota/webClient/uploads"
+                    vehicle_info.version = "1.0.0"
                     # 发布消息并记录日志
                     try:
                         ros2_node.publish_vehicle_data(vehicle_info)
@@ -192,13 +215,38 @@ async def handle_connection(websocket, path, ros2_node):
                     except Exception as e:
                         ros2_node.get_logger().error(f"发布 IMEI 为 {imei} 的升级消息失败: {str(e)}")
 
-                elif data.get('type') == 'get_config':
+                elif data.get('type') == 'request_car_conf':
                     imei = data.get('imei')
-                    if imei:
-                        ros2_node.get_logger().info(f"收到客户端获取配置请求，IMEI: {imei}")
-                    else:
+                    if not imei:
                         ros2_node.get_logger().error("get_config 消息缺少 imei 字段")
+                        return  # 提前返回，避免后续不必要的代码执行
 
+                    ros2_node.get_logger().info(f"收到客户端获取配置请求，IMEI: {imei}")
+                
+                        # 尝试从 received_conf_data 中获取车辆配置信息
+                        # vehicle_conf = ros2_node.received_conf_data.get(imei)
+                       
+                            # 若配置信息存在，转换为字典格式
+                    vehicle_conf = {
+                        "type": "car_conf_response",
+                        "serialPort": "/dev/ttyUSB0",  # 假设存在 serial_port 属性
+                        "baudRate": 115200,  # 假设存在 baud_rate 属性
+                        "ipAddress": "192.168.1.100",  # 假设存在 ip_address 属性
+                        "port": 11  # 假设存在 port 属性
+                    }
+
+                    ros2_node.get_logger().info(f"发送配置信息: {vehicle_conf}")
+                    # 发送车辆信息给客户端
+                    await websocket.send(json.dumps(vehicle_conf))
+                    ros2_node.get_logger().info(f"成功发送 IMEI 为 {imei} 的配置信息")
+
+                elif data.get('type') == 'request_write_config':  # 处理 write_config 消息
+                    imei = data.get('imei')
+                    serial_port = data.get('serialPort')
+                    baud_rate = data.get('baudRate')
+                    ip_address = data.get('ipAddress')
+                    port = data.get('port')
+                    ros2_node.get_logger().info(f"收到 IMEI 为 {imei} 的写入配置请求")
                 # 检查 imei 是否存在，再创建异步任务
                 if 'imei' in data:
                     asyncio.create_task(send_upgrade_complete(websocket, data['imei']))
