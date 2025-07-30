@@ -44,17 +44,17 @@ cars = [
 class OtaROS2Node(Node):
     def __init__(self):
         super().__init__('ota_ros2_node')
-        # 修改发布者消息类型为 String
+        
         self.vehicle_publisher = self.create_publisher(TruckImei, '/ota_ui/ui/ota_truck_imei', 10)
         # 修改订阅者消息类型为 String
         self.upgrade_subscriber = self.create_subscription(
-            TruckImei,  # 使用标准消息类型 String
+            TruckImei,  
             '/ota_update/server/online_truck_info',
             self.upgrade_command_callback,
             10
         )       
         self.vehicle_subscriber = self.create_subscription(
-            VehicleConf,  # 使用标准消息类型 String
+            VehicleConf,  
             '/ota_update/server/vehicle_conf',
             self.vehicle_conf_callback,
             10
@@ -226,13 +226,16 @@ async def handle_connection(websocket, path, ros2_node):
                         # 尝试从 received_conf_data 中获取车辆配置信息
                         # vehicle_conf = ros2_node.received_conf_data.get(imei)
                        
-                            # 若配置信息存在，转换为字典格式
                     vehicle_conf = {
                         "type": "car_conf_response",
-                        "serialPort": "/dev/ttyUSB0",  # 假设存在 serial_port 属性
-                        "baudRate": 115200,  # 假设存在 baud_rate 属性
-                        "ipAddress": "192.168.1.100",  # 假设存在 ip_address 属性
-                        "port": 11  # 假设存在 port 属性
+                        "ipAddress": "192.168.1.100", 
+                        "port": 11,
+                        "vehicleImei": "dnh123", 
+                        "envId": "test", 
+                        "minioAddress": "192.168.1.100",  
+                        "minioPort": "9000",  
+                        "accessKey": "admin",  
+                        "secretKey": "admin123456", 
                     }
 
                     ros2_node.get_logger().info(f"发送配置信息: {vehicle_conf}")
